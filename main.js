@@ -32,65 +32,79 @@ let satCount = 0;
 
 // Satellite dot geometry + material
 const satGeo = new THREE.SphereGeometry(0.005, 6, 6);
-const satMat = new THREE.MeshBasicMaterial({color: 0xff0000});
+const satMat = new THREE.MeshBasicMaterial({color: 0xffffff});
 
 // Create InstancedMesh with max capacity (adjust as needed)
-const maxSats = 2000;
+const maxSats = 25000;
 const satMesh = new THREE.InstancedMesh(satGeo, satMat, maxSats);
 scene.add(satMesh);
 
 // Temporary matrix for instance positioning
 const dummy = new THREE.Object3D();
  
-// Fetch and parse TLEs from Celestrak
+// Main TLE fetch + parse
 async function loadTLEs() {
-  const res = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
-  const text = await res.text();
+  try {
+    const res = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
+    const text = await res.text();
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  satrecs = [];
-
-  for(let i = 0; i < lines.length; i += 3) {
-    const name = lines[i];
-    const tle1 = lines[i+1];
-    const tle2 = lines[i+2];
-    if(tle1 && tle2) {
-      const satrec = satellite.twoline2satrec(tle1, tle2);
-      satrecs.push({ name, satrec });
+    const newSatrecs = [];
+    for (let i = 0; i < lines.length; i += 3) {
+      const name = lines[i];
+      const tle1 = lines[i + 1];
+      const tle2 = lines[i + 2];
+      if (tle1 && tle2) {
+        const satrec = satellite.twoline2satrec(tle1, tle2);
+        newSatrecs.push({ name, satrec });
+      }
     }
+
+    satrecs = newSatrecs.slice(0, maxSats); // Limit to max capacity
+    console.log(`[${new Date().toLocaleTimeString()}] Loaded ${satrecs.length} satellites.`);
+  } catch (err) {
+    console.error('TLE fetch error:', err);
   }
-  satCount = Math.min(satrecs.length, maxSats);
-  console.log(`Loaded ${satCount} satellites.`);
 }
 
-// Update positions and instance matrices
+// Position update
 function updateSatellitePositions() {
   const now = new Date();
-  const scale = 1/6371; // Earth radius normalized
+  const scale = 1 / 6371;
 
-  for(let i = 0; i < satCount; i++) {
+  for (let i = 0; i < satrecs.length; i++) {
     const { satrec } = satrecs[i];
     const posVel = satellite.propagate(satrec, now);
-    const posEci = posVel.position;
-    if(!posEci) continue;
+    if (!posVel.position) continue;
+
     const gmst = satellite.gstime(now);
-    const posEcf = satellite.eciToEcf(posEci, gmst);
+    const posEcf = satellite.eciToEcf(posVel.position, gmst);
 
     dummy.position.set(posEcf.x * scale, posEcf.y * scale, posEcf.z * scale);
     dummy.updateMatrix();
     satMesh.setMatrixAt(i, dummy.matrix);
   }
+
   satMesh.instanceMatrix.needsUpdate = true;
 }
 
-// Simple animate loop
+// Animate
 function animate() {
-  requestAnimationFrame(animate); //at 60 FPS
+  requestAnimationFrame(animate);
   updateSatellitePositions();
   controls.update();
   renderer.render(scene, camera);
 }
 
-loadTLEs().then(() => {
-  animate();
+// Startup
+await loadTLEs();
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
+animate();
+
+// Auto-refresh TLE data every 6 hours
+setInterval(loadTLEs, 6 * 60 * 60 * 1000);
+

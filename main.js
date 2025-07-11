@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import * as satellite from 'satellite.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+
 
 // Setup scene, camera, renderer (same as before)
 const scene = new THREE.Scene();
@@ -9,6 +11,14 @@ camera.position.z = 4;
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; // Smooth motion
+controls.dampingFactor = 0.05;
+controls.enablePan = false;    // Optional: disable panning
+controls.minDistance = 2;      // Optional: min zoom distance
+controls.maxDistance = 100;    // Optional: max zoom distance
+
 
 // Earth
 const earthGeo = new THREE.SphereGeometry(1, 64, 64);
@@ -31,7 +41,7 @@ scene.add(satMesh);
 
 // Temporary matrix for instance positioning
 const dummy = new THREE.Object3D();
-
+ 
 // Fetch and parse TLEs from Celestrak
 async function loadTLEs() {
   const res = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
@@ -75,8 +85,9 @@ function updateSatellitePositions() {
 
 // Simple animate loop
 function animate() {
-  requestAnimationFrame(animate);
+  requestAnimationFrame(animate); //at 60 FPS
   updateSatellitePositions();
+  controls.update();
   renderer.render(scene, camera);
 }
 
